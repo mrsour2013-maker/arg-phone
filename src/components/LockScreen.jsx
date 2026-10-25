@@ -12,7 +12,7 @@ const UNLOCK_THRESHOLD = 180;
 export default function LockScreen({
   passcode = '0705',
   time = '23:42',
-  notification = '苏茜：你终于醒了。',
+  notification = '',
   onUnlock,
   backgroundImage
 }) {
@@ -26,6 +26,7 @@ export default function LockScreen({
   const dragStartX = useRef(0);
   const pointerIdRef = useRef(null);
   const unlockTriggeredRef = useRef(false);
+  const sliderRef = useRef(null);
 
   useEffect(() => {
     if (!isPasscodeVisible || input.length !== passcode.length) return;
@@ -36,7 +37,6 @@ export default function LockScreen({
         setFlashError(false);
         setShowHint(false);
         setInput('');
-        unlockTriggeredRef.current = false;
         onUnlock?.();
         return;
       }
@@ -50,11 +50,13 @@ export default function LockScreen({
         navigator.vibrate(120);
       }
 
-      setTimeout(() => {
+      const errorResetTimer = setTimeout(() => {
         setFlashError(false);
         setShowHint(false);
         setIsShaking(false);
       }, 900);
+
+      return () => clearTimeout(errorResetTimer);
     }, 180);
 
     return () => clearTimeout(timer);
@@ -86,21 +88,24 @@ export default function LockScreen({
         setFlashError(false);
         setShowHint(false);
         setInput('');
-        unlockTriggeredRef.current = false;
         onUnlock?.();
       } else {
         setFlashError(true);
         setShowHint(true);
         setIsShaking(true);
         setInput('');
+
         if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
           navigator.vibrate(160);
         }
-        setTimeout(() => {
+
+        const resetTimer = setTimeout(() => {
           setFlashError(false);
           setShowHint(false);
           setIsShaking(false);
         }, 900);
+
+        return () => clearTimeout(resetTimer);
       }
       return;
     }
@@ -109,15 +114,18 @@ export default function LockScreen({
     setInput((prev) => prev + key);
   };
 
-  const handleUnlockStart = (event) => {
+  const beginUnlockDrag = (event) => {
     if (isPasscodeVisible || unlockTriggeredRef.current) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    if (event.currentTarget.setPointerCapture) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
     pointerIdRef.current = event.pointerId;
     dragStartX.current = event.clientX;
     setIsDragging(true);
   };
 
-  const handleUnlockMove = (event) => {
+  const moveUnlockDrag = (event) => {
     if (!isDragging || isPasscodeVisible || event.pointerId !== pointerIdRef.current) return;
 
     const deltaX = event.clientX - dragStartX.current;
@@ -126,33 +134,39 @@ export default function LockScreen({
       return;
     }
 
-    const maxDrag = event.currentTarget.clientWidth - 56;
-    const nextDistance = Math.min(deltaX, maxDrag);
-    setDragDistance(nextDistance);
+    const sliderWidth = sliderRef.current ? sliderRef.current.getBoundingClientRect().width : 280;
+    const maxDrag = Math.max(0, sliderWidth - 56);
+    setDragDistance(Math.min(deltaX, maxDrag));
   };
 
-  const handleUnlockEnd = (event) => {
+  const endUnlockDrag = (event) => {
     if (!isDragging || event.pointerId !== pointerIdRef.current) return;
 
-    const sliderWidth = event.currentTarget.clientWidth - 56;
-    if (dragDistance >= sliderWidth * 0.92 || dragDistance >= UNLOCK_THRESHOLD) {
+    const sliderWidth = sliderRef.current ? sliderRef.current.getBoundingClientRect().width : 280;
+    const effectiveWidth = Math.max(0, sliderWidth - 56);
+    const reachedThreshold = dragDistance >= effectiveWidth * 0.8 || dragDistance >= UNLOCK_THRESHOLD;
+
+    if (reachedThreshold) {
       unlockTriggeredRef.current = true;
-      setDragDistance(sliderWidth);
+      setDragDistance(effectiveWidth);
       setIsPasscodeVisible(true);
       setIsDragging(false);
-      triggerVibrate(20);
       pointerIdRef.current = null;
-    } else {
-      resetUnlockState();
-      setDragDistance(0);
+      triggerVibrate(20);
+      return;
     }
+
+    resetUnlockState();
+    setDragDistance(0);
   };
 
-  const handleUnlockCancel = () => {
-    if (isDragging) {
-      resetUnlockState();
-      setDragDistance(0);
+  const cancelUnlockDrag = (event) => {
+    if (!isDragging) return;
+    if (event && pointerIdRef.current !== null && event.pointerId !== undefined && event.pointerId !== pointerIdRef.current) {
+      return;
     }
+    resetUnlockState();
+    setDragDistance(0);
   };
 
   return (
@@ -176,12 +190,13 @@ export default function LockScreen({
         {!isPasscodeVisible && (
           <div className="unlock-slider-wrap">
             <div
+              ref={sliderRef}
               className="unlock-slider"
-              onPointerDown={handleUnlockStart}
-              onPointerMove={handleUnlockMove}
-              onPointerUp={handleUnlockEnd}
-              onPointerLeave={handleUnlockCancel}
-              onPointerCancel={handleUnlockCancel}
+              onPointerDown={beginUnlockDrag}
+              onPointerMove={moveUnlockDrag}
+              onPointerUp={endUnlockDrag}
+              onPointerLeave={cancelUnlockDrag}
+              onPointerCancel={cancelUnlockDrag}
             >
               <div
                 className="unlock-thumb"
