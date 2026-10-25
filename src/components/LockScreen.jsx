@@ -7,7 +7,7 @@ const KEYS = [
   ['⌫', '0', '✓']
 ];
 
-const SWIPE_THRESHOLD = 90;
+const SWIPE_THRESHOLD = 110;
 
 export default function LockScreen({
   passcode = '0705',
@@ -22,6 +22,7 @@ export default function LockScreen({
   const [isPasscodeVisible, setIsPasscodeVisible] = useState(false);
   const [dragDistance, setDragDistance] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [showHint, setShowHint] = useState(false);
   const dragStartY = useRef(0);
 
   useEffect(() => {
@@ -31,6 +32,8 @@ export default function LockScreen({
 
     const timer = setTimeout(() => {
       if (correct) {
+        setFlashError(false);
+        setShowHint(false);
         onUnlock?.();
         return;
       }
@@ -38,17 +41,31 @@ export default function LockScreen({
       setFlashError(true);
       setIsShaking(true);
       setInput('');
+      setShowHint(true);
+
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate(120);
+      }
 
       setTimeout(() => {
         setFlashError(false);
         setIsShaking(false);
-      }, 420);
+        setShowHint(false);
+      }, 900);
     }, 180);
 
     return () => clearTimeout(timer);
   }, [input, passcode, onUnlock]);
 
+  const triggerVibrate = () => {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(18);
+    }
+  };
+
   const handleKey = (key) => {
+    triggerVibrate();
+
     if (key === '⌫') {
       setInput((prev) => prev.slice(0, -1));
       return;
@@ -56,15 +73,24 @@ export default function LockScreen({
 
     if (key === '✓') {
       if (input === passcode) {
+        setFlashError(false);
+        setShowHint(false);
         onUnlock?.();
       } else {
         setFlashError(true);
         setIsShaking(true);
         setInput('');
+        setShowHint(true);
+
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate(160);
+        }
+
         setTimeout(() => {
           setFlashError(false);
           setIsShaking(false);
-        }, 420);
+          setShowHint(false);
+        }, 900);
       }
       return;
     }
@@ -77,6 +103,7 @@ export default function LockScreen({
     setIsPasscodeVisible(true);
     setDragDistance(0);
     setIsDragging(false);
+    triggerVibrate();
   };
 
   const handleSwipeStart = (event) => {
@@ -88,12 +115,13 @@ export default function LockScreen({
   const handleSwipeMove = (event) => {
     if (!isDragging || isPasscodeVisible) return;
     const delta = dragStartY.current - event.clientY;
+
     if (delta <= 0) {
       setDragDistance(0);
       return;
     }
 
-    const nextDistance = Math.min(delta, SWIPE_THRESHOLD + 40);
+    const nextDistance = Math.min(delta, SWIPE_THRESHOLD + 60);
     setDragDistance(nextDistance);
 
     if (delta >= SWIPE_THRESHOLD) {
@@ -114,7 +142,7 @@ export default function LockScreen({
       style={{
         backgroundImage: backgroundImage
           ? `linear-gradient(rgba(2,6,23,0.72), rgba(2,6,23,0.78)), url(${backgroundImage})`
-          : 'linear-gradient(180deg, #020617 0%, #121827 42%, #0f172a 100%)'
+          : 'linear-gradient(180deg, #020617 0%, #111827 42%, #0f172a 100%)'
       }}
     >
       <div className="ios-status">
@@ -129,7 +157,7 @@ export default function LockScreen({
         <div className={`passcode-box ${flashError ? 'error' : ''}`}>
           <div className="label">LOCKED</div>
 
-          <div className="dials">
+          <div className="dials" aria-live="polite">
             {Array.from({ length: passcode.length }).map((_, index) => (
               <span key={index} className={index < input.length ? 'filled' : ''}>
                 {index < input.length ? '•' : ''}
@@ -137,7 +165,9 @@ export default function LockScreen({
             ))}
           </div>
 
-          <div className="note">{notification}</div>
+          <div className={`note ${showHint ? 'show-hint' : ''}`}>
+            {showHint ? '🎂' : notification}
+          </div>
         </div>
 
         {!isPasscodeVisible && (
@@ -182,6 +212,8 @@ export default function LockScreen({
           </>
         )}
       </div>
+
+      <div className="home-indicator" aria-label="Home Indicator" />
     </div>
   );
 }
