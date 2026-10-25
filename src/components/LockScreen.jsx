@@ -7,7 +7,7 @@ const KEYS = [
   ['⌫', '0', '✓']
 ];
 
-const SWIPE_THRESHOLD = 110;
+const UNLOCK_THRESHOLD = 180;
 
 export default function LockScreen({
   passcode = '0705',
@@ -19,29 +19,32 @@ export default function LockScreen({
   const [input, setInput] = useState('');
   const [isShaking, setIsShaking] = useState(false);
   const [flashError, setFlashError] = useState(false);
+  const [showHint, setShowHint] = useState(false);
   const [isPasscodeVisible, setIsPasscodeVisible] = useState(false);
   const [dragDistance, setDragDistance] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [showHint, setShowHint] = useState(false);
-  const dragStartY = useRef(0);
+  const dragStartX = useRef(0);
+  const pointerIdRef = useRef(null);
+  const unlockTriggeredRef = useRef(false);
 
   useEffect(() => {
-    if (input.length !== passcode.length) return;
+    if (!isPasscodeVisible || input.length !== passcode.length) return;
 
     const correct = input === passcode;
-
     const timer = setTimeout(() => {
       if (correct) {
         setFlashError(false);
         setShowHint(false);
+        setInput('');
+        unlockTriggeredRef.current = false;
         onUnlock?.();
         return;
       }
 
       setFlashError(true);
+      setShowHint(true);
       setIsShaking(true);
       setInput('');
-      setShowHint(true);
 
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
         navigator.vibrate(120);
@@ -49,22 +52,29 @@ export default function LockScreen({
 
       setTimeout(() => {
         setFlashError(false);
-        setIsShaking(false);
         setShowHint(false);
+        setIsShaking(false);
       }, 900);
     }, 180);
 
     return () => clearTimeout(timer);
-  }, [input, passcode, onUnlock]);
+  }, [input, passcode, isPasscodeVisible, onUnlock]);
 
-  const triggerVibrate = () => {
+  const triggerVibrate = (duration = 18) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-      navigator.vibrate(18);
+      navigator.vibrate(duration);
     }
   };
 
+  const resetUnlockState = () => {
+    setIsDragging(false);
+    setDragDistance(0);
+    pointerIdRef.current = null;
+    unlockTriggeredRef.current = false;
+  };
+
   const handleKey = (key) => {
-    triggerVibrate();
+    triggerVibrate(18);
 
     if (key === '⌫') {
       setInput((prev) => prev.slice(0, -1));
@@ -75,21 +85,21 @@ export default function LockScreen({
       if (input === passcode) {
         setFlashError(false);
         setShowHint(false);
+        setInput('');
+        unlockTriggeredRef.current = false;
         onUnlock?.();
       } else {
         setFlashError(true);
+        setShowHint(true);
         setIsShaking(true);
         setInput('');
-        setShowHint(true);
-
         if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
           navigator.vibrate(160);
         }
-
         setTimeout(() => {
           setFlashError(false);
-          setIsShaking(false);
           setShowHint(false);
+          setIsShaking(false);
         }, 900);
       }
       return;
@@ -99,39 +109,48 @@ export default function LockScreen({
     setInput((prev) => prev + key);
   };
 
-  const activatePasscode = () => {
-    setIsPasscodeVisible(true);
-    setDragDistance(0);
-    setIsDragging(false);
-    triggerVibrate();
-  };
-
-  const handleSwipeStart = (event) => {
-    if (isPasscodeVisible) return;
-    dragStartY.current = event.clientY;
+  const handleUnlockStart = (event) => {
+    if (isPasscodeVisible || unlockTriggeredRef.current) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    pointerIdRef.current = event.pointerId;
+    dragStartX.current = event.clientX;
     setIsDragging(true);
   };
 
-  const handleSwipeMove = (event) => {
-    if (!isDragging || isPasscodeVisible) return;
-    const delta = dragStartY.current - event.clientY;
+  const handleUnlockMove = (event) => {
+    if (!isDragging || isPasscodeVisible || event.pointerId !== pointerIdRef.current) return;
 
-    if (delta <= 0) {
+    const deltaX = event.clientX - dragStartX.current;
+    if (deltaX <= 0) {
       setDragDistance(0);
       return;
     }
 
-    const nextDistance = Math.min(delta, SWIPE_THRESHOLD + 60);
+    const maxDrag = event.currentTarget.clientWidth - 56;
+    const nextDistance = Math.min(deltaX, maxDrag);
     setDragDistance(nextDistance);
+  };
 
-    if (delta >= SWIPE_THRESHOLD) {
-      activatePasscode();
+  const handleUnlockEnd = (event) => {
+    if (!isDragging || event.pointerId !== pointerIdRef.current) return;
+
+    const sliderWidth = event.currentTarget.clientWidth - 56;
+    if (dragDistance >= sliderWidth * 0.92 || dragDistance >= UNLOCK_THRESHOLD) {
+      unlockTriggeredRef.current = true;
+      setDragDistance(sliderWidth);
+      setIsPasscodeVisible(true);
+      setIsDragging(false);
+      triggerVibrate(20);
+      pointerIdRef.current = null;
+    } else {
+      resetUnlockState();
+      setDragDistance(0);
     }
   };
 
-  const handleSwipeEnd = () => {
-    if (!isPasscodeVisible) {
-      setIsDragging(false);
+  const handleUnlockCancel = () => {
+    if (isDragging) {
+      resetUnlockState();
       setDragDistance(0);
     }
   };
@@ -154,35 +173,19 @@ export default function LockScreen({
         <div className="date-label">Monday, October 25</div>
         <div className="time-label">{time}</div>
 
-        <div className={`passcode-box ${flashError ? 'error' : ''}`}>
-          <div className="label">LOCKED</div>
-
-          <div className="dials" aria-live="polite">
-            {Array.from({ length: passcode.length }).map((_, index) => (
-              <span key={index} className={index < input.length ? 'filled' : ''}>
-                {index < input.length ? '•' : ''}
-              </span>
-            ))}
-          </div>
-
-          <div className={`note ${showHint ? 'show-hint' : ''}`}>
-            {showHint ? '🎂' : notification}
-          </div>
-        </div>
-
         {!isPasscodeVisible && (
           <div className="unlock-slider-wrap">
             <div
               className="unlock-slider"
-              onPointerDown={handleSwipeStart}
-              onPointerMove={handleSwipeMove}
-              onPointerUp={handleSwipeEnd}
-              onPointerLeave={handleSwipeEnd}
-              onPointerCancel={handleSwipeEnd}
+              onPointerDown={handleUnlockStart}
+              onPointerMove={handleUnlockMove}
+              onPointerUp={handleUnlockEnd}
+              onPointerLeave={handleUnlockCancel}
+              onPointerCancel={handleUnlockCancel}
             >
               <div
                 className="unlock-thumb"
-                style={{ transform: `translateY(-${dragDistance}px)` }}
+                style={{ transform: `translateX(${dragDistance}px)` }}
               >
                 <span>›</span>
               </div>
@@ -193,6 +196,22 @@ export default function LockScreen({
 
         {isPasscodeVisible && (
           <>
+            <div className={`passcode-box ${flashError ? 'error' : ''}`}>
+              <div className="label">LOCKED</div>
+
+              <div className="dials" aria-live="polite">
+                {Array.from({ length: passcode.length }).map((_, index) => (
+                  <span key={index} className={index < input.length ? 'filled' : ''}>
+                    {index < input.length ? '•' : ''}
+                  </span>
+                ))}
+              </div>
+
+              <div className={`note ${showHint ? 'show-hint' : ''}`}>
+                {showHint ? '🎂' : ''}
+              </div>
+            </div>
+
             <div className="keypad">
               {KEYS.flat().map((key) => (
                 <button
