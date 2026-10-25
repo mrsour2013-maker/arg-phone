@@ -14,6 +14,11 @@ function App() {
     setCurrentApp('home');
   };
 
+  const handleLockDevice = () => {
+    setCurrentApp('lockscreen');
+    setTargetChatId(null);
+  };
+
   const handleOpenChatWithContact = (contactId) => {
     setTargetChatId(contactId);
     setCurrentApp('messages');
@@ -32,7 +37,12 @@ function App() {
   }
 
   if (currentApp === 'home') {
-    return <HomeScreen onOpenChatWithContact={handleOpenChatWithContact} />;
+    return (
+      <HomeScreen
+        onOpenChatWithContact={handleOpenChatWithContact}
+        onLockDevice={handleLockDevice}
+      />
+    );
   }
 
   if (currentApp === 'messages') {
