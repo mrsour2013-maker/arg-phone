@@ -2,7 +2,7 @@ export const storyData = {
   lockScreen: {
     time: '23:42',
     passcode: '0705',
-    notification: '苏茜：你终于醒了。机柜标签上写着 0705。',
+    notification: '',
     backgroundImage: null
   },
   contacts: [
@@ -19,7 +19,7 @@ export const storyData = {
     ],
     silin: [
       { id: 1, sender: 'silin', text: '那些数据被清理了，可硬盘还在。' },
-      { id: 2, sender: 'me', text: '你有没有看到任何标签？' },
+      { id: 2, sender: 'me', text: '你有没有看��任何标签？' },
       { id: 3, sender: 'silin', text: '有。机柜上有 0705。记住它。' }
     ],
     lab: [
